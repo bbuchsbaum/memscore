@@ -1,0 +1,21 @@
+Package: memscore
+Title: R Interface to the Memscore Command Line Tools
+Version: 0.0.0.9000
+Authors@R: 
+    person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
+Description: Native R wrappers for the memscore command line interface.
+    The package scores image memorability, runs challenger benchmarks,
+    and launches repeated FIGRIM studies by invoking an external command
+    line backend with system2(), so it does not require reticulate.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    jsonlite
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+VignetteBuilder: knitr

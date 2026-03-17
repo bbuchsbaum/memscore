@@ -1,0 +1,184 @@
+---
+title: "Getting Started with memscore"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with memscore}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r}
+library(memscore)
+```
+
+## What does memscore do?
+
+`memscore` gives R users access to the Python `memscore` command line tools
+without `reticulate`. You configure a backend once, then call ordinary R
+functions such as `memscore_predict()` or `memscore_benchmark_manifest()`.
+
+This vignette uses a mocked backend so the examples run during package checks.
+The public R API and return values are the same as in a real session.
+
+```{r mock-backend, include = FALSE}
+assignInNamespace(
+  ".system2",
+  function(command, args, stdout = TRUE, stderr = TRUE) {
+    subcommand <- args[[1]]
+
+    if (identical(subcommand, "predict")) {
+      return(c(
+        "Wrote predictions to /tmp/preds.csv",
+        '[{"id":"beach","image_path":"/tmp/beach.jpg","memorability":0.72},',
+        '{"id":"forest","image_path":"/tmp/forest.jpg","memorability":0.54}]'
+      ))
+    }
+
+    if (identical(subcommand, "benchmark-manifest")) {
+      json_path <- args[match("--output-json", args) + 1L]
+      pred_path <- args[match("--output-predictions", args) + 1L]
+      writeLines(
+        c(
+          "{",
+          '  "dataset": "manifest",',
+          '  "delta_vs_resmem": {',
+          '    "spearman": 0.18,',
+          '    "mse": -0.012',
+          "  },",
+          '  "best_clip": {"clip_model": "ViT-B-32", "regressor": "ridge"}',
+          "}"
+        ),
+        json_path
+      )
+      writeLines(
+        "id,image_path,ground_truth,resmem_prediction,clip_prediction\nbeach,/tmp/beach.jpg,0.70,0.61,0.74",
+        pred_path
+      )
+      return(c(
+        sprintf("Wrote summary to %s", json_path),
+        sprintf("Wrote test predictions to %s", pred_path)
+      ))
+    }
+
+    if (identical(subcommand, "study-figrim")) {
+      json_path <- args[match("--output-json", args) + 1L]
+      csv_path <- args[match("--output-csv", args) + 1L]
+      writeLines(
+        c(
+          "{",
+          '  "summary_rows": [',
+          '    {"protocol": "across_category", "model_mean_spearman": 0.74},',
+          '    {"protocol": "within_category", "model_mean_spearman": 0.64}',
+          "  ]",
+          "}"
+        ),
+        json_path
+      )
+      writeLines(
+        "protocol,model_mean_spearman\nacross_category,0.74\nwithin_category,0.64",
+        csv_path
+      )
+      return(c(
+        sprintf("Wrote study JSON to %s", json_path),
+        sprintf("Wrote study CSV to %s", csv_path)
+      ))
+    }
+
+    stop("Unexpected mocked subcommand: ", subcommand, call. = FALSE)
+  },
+  ns = "memscore"
+)
+```
+
+## How do you configure the backend?
+
+Point R at either a `memscore` executable or a Python interpreter that can run
+`python -m memscore`.
+
+```{r configure}
+memscore_configure(
+  python = "/usr/bin/python3",
+  workdir = tempdir()
+)
+
+info <- memscore_cli_info()
+info
+stopifnot(info$source %in% c("path-cli", "python-module"))
+```
+
+## How do you score images?
+
+The first workflow is simple scoring. The return value is a data frame with one
+row per input image.
+
+```{r predict}
+scores <- memscore_predict(c("beach.jpg", "forest.jpg"))
+scores
+stopifnot(all(c("id", "image_path", "memorability") %in% names(scores)))
+stopifnot(all(is.finite(scores$memorability)))
+stopifnot(all(scores$memorability >= 0 & scores$memorability <= 1))
+```
+
+## How do you benchmark a custom manifest?
+
+The manifest workflow compares the released `ResMem` checkpoint against frozen
+CLIP challengers on your own train/val/test split file.
+
+```{r manifest-file, include = FALSE}
+manifest_path <- tempfile(fileext = ".csv")
+writeLines(
+  c(
+    "path,score,split,id",
+    "beach.jpg,0.70,train,beach",
+    "forest.jpg,0.54,val,forest",
+    "street.jpg,0.63,test,street"
+  ),
+  manifest_path
+)
+```
+
+```{r benchmark-manifest}
+benchmark <- memscore_benchmark_manifest(
+  manifest = manifest_path,
+  clip_models = c("ViT-B-32", "RN50"),
+  regressors = "ridge"
+)
+
+benchmark$summary$delta_vs_resmem
+stopifnot(benchmark$summary$delta_vs_resmem$spearman > 0)
+file.exists(benchmark$output_json)
+file.exists(benchmark$output_predictions)
+```
+
+## How do you launch the FIGRIM study?
+
+For repeated FIGRIM comparisons, `memscore_study_figrim()` exposes the same
+workflow that the Python CLI uses.
+
+```{r study-figrim}
+study <- memscore_study_figrim(
+  figrim_root = tempdir(),
+  clip_models = c("ViT-B-32", "RN50", "ViT-B-16"),
+  clip_tta = "fivecrop"
+)
+
+study$study$summary_rows
+stopifnot(nrow(study$study$summary_rows) >= 1)
+```
+
+## Where next?
+
+- Use `?memscore_predict` for the scoring interface.
+- Use `?memscore_benchmark_manifest` and `?memscore_study_figrim` for the two
+  main evaluation workflows.
+- See the top-level `README.md` and `BENCHMARKS.md` files in the repository for
+  the matching Python commands.
