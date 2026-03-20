@@ -5,10 +5,13 @@
 (^|/)resmem($|/).*
 (^|/)results($|/).*
 ^BENCHMARKS\.md$
+^_pkgdown\.yml$
 ^docs($|/).*
 ^membench($|/).*
 ^memscore($|/).*
 ^memscore[.]egg-info($|/).*
+^pkgdown($|/).*
+^python-docs($|/).*
 ^pytests($|/).*
 ^pyproject\.toml$
 ^requirements(-benchmark)?\.txt$

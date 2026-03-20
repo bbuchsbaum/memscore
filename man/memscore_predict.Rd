@@ -14,6 +14,7 @@ memscore_predict(
   output = NULL,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 )
 }
@@ -36,14 +37,17 @@ memscore_predict(
 
 \item{python}{Optional explicit path to a Python interpreter.}
 
+\item{backend}{Backend mode. Use \code{"cli"} to force command-line execution or
+\code{"reticulate"} to call the Python package in-process.}
+
 \item{workdir}{Optional working directory for backend execution.}
 }
 \value{
 A data frame with \code{id}, \code{image_path}, and \code{memorability}.
 }
 \description{
-Scores one or more image files or directories using the external \code{memscore}
-backend.
+Scores one or more image files or directories using either the command-line
+backend or the optional \code{reticulate} bridge.
 }
 \examples{
 \dontrun{

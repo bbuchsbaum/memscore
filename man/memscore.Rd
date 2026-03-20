@@ -9,8 +9,8 @@
 Native R wrappers for the \code{memscore} command line tools.
 }
 \details{
-The package does not use \code{reticulate}. Instead, it shells out to an
-external \code{memscore} CLI or to \verb{python -m memscore}.
+The package can either shell out to an external \code{memscore} CLI or call the
+Python package in-process through \code{reticulate}.
 
 Use \code{vignette("memscore", package = "memscore")} for a guided walkthrough.
 }

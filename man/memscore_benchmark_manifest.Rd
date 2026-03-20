@@ -24,6 +24,7 @@ memscore_benchmark_manifest(
   clip_tta_resize = NULL,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 )
 }
@@ -69,6 +70,9 @@ augmentation.}
 \item{cli}{Optional explicit path to a \code{memscore} executable.}
 
 \item{python}{Optional explicit path to a Python interpreter.}
+
+\item{backend}{Backend mode. Use \code{"cli"} to force command-line execution or
+\code{"reticulate"} to call the Python package in-process.}
 
 \item{workdir}{Optional working directory for backend execution.}
 }

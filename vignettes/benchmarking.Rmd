@@ -1,0 +1,253 @@
+---
+title: "Comparing ResMem and CLIP Challengers"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comparing ResMem and CLIP Challengers}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+params:
+  family: red
+  preset: homage
+css: albers.css
+resource_files:
+- albers.css
+- albers.js
+includes:
+  in_header: |-
+    <script src="albers.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('palette-red');});</script>
+---
+
+```{r setup, include = FALSE}
+if (requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("albersdown", quietly = TRUE)) ggplot2::theme_set(albersdown::theme_albers(family = params$family, preset = params$preset))
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r}
+library(memscore)
+```
+
+## Why use the benchmarking layer?
+
+If you want more than a single memorability score, `memscore` gives you two
+comparison workflows from R. You can benchmark a custom train/val/test manifest
+with `memscore_benchmark_manifest()`, or you can run a repeated FIGRIM study
+with `memscore_study_figrim()`.
+
+This vignette uses a mocked backend so the examples stay runnable under
+`R CMD check`. The return values, file outputs, and summary structures match the
+real package interface whether you run through `reticulate` or the CLI bridge.
+
+```{r benchmark-mock-backend, include = FALSE}
+options(memscore.cli = "/tmp/memscore")
+
+assignInNamespace(
+  ".system2",
+  function(command, args, stdout = TRUE, stderr = TRUE) {
+    subcommand <- args[[1]]
+
+    if (identical(subcommand, "benchmark-manifest")) {
+      json_path <- args[match("--output-json", args) + 1L]
+      pred_path <- args[match("--output-predictions", args) + 1L]
+      writeLines(
+        c(
+          "{",
+          '  "dataset": "manifest",',
+          '  "sizes": {"train": 4, "val": 1, "test": 3},',
+          '  "resmem": {"test_metrics": {"spearman": 0.47, "mse": 0.024}},',
+          '  "best_clip": {',
+          '    "clip_model": "ViT-B-32",',
+          '    "regressor": "ridge",',
+          '    "test_metrics": {"spearman": 0.66, "mse": 0.013}',
+          "  },",
+          '  "delta_vs_resmem": {"spearman": 0.19, "mse": -0.011}',
+          "}"
+        ),
+        json_path
+      )
+      writeLines(
+        c(
+          "id,image_path,ground_truth,resmem_prediction,clip_prediction",
+          "beach,/tmp/beach.jpg,0.72,0.58,0.71",
+          "street,/tmp/street.jpg,0.63,0.55,0.65",
+          "forest,/tmp/forest.jpg,0.49,0.57,0.50"
+        ),
+        pred_path
+      )
+      return(c(
+        sprintf("Wrote summary to %s", json_path),
+        sprintf("Wrote test predictions to %s", pred_path)
+      ))
+    }
+
+    if (identical(subcommand, "study-figrim")) {
+      json_path <- args[match("--output-json", args) + 1L]
+      csv_path <- args[match("--output-csv", args) + 1L]
+      writeLines(
+        c(
+          "{",
+          '  "summary_rows": [',
+          '    {"protocol": "across_category", "feature_source": "ViT-B-32+RN50+ViT-B-16", "method": "mean_ensemble", "model_mean_spearman": 0.74, "resmem_mean_spearman": 0.45, "mean_delta_spearman": 0.29},',
+          '    {"protocol": "within_category", "feature_source": "ViT-B-32+RN50+ViT-B-16", "method": "mean_ensemble", "model_mean_spearman": 0.64, "resmem_mean_spearman": 0.24, "mean_delta_spearman": 0.40}',
+          "  ]",
+          "}"
+        ),
+        json_path
+      )
+      writeLines(
+        c(
+          "protocol,feature_source,method,model_mean_spearman,resmem_mean_spearman,mean_delta_spearman",
+          "across_category,ViT-B-32+RN50+ViT-B-16,mean_ensemble,0.74,0.45,0.29",
+          "within_category,ViT-B-32+RN50+ViT-B-16,mean_ensemble,0.64,0.24,0.40"
+        ),
+        csv_path
+      )
+      return(c(
+        sprintf("Wrote study JSON to %s", json_path),
+        sprintf("Wrote study CSV to %s", csv_path)
+      ))
+    }
+
+    stop("Unexpected mocked subcommand: ", subcommand, call. = FALSE)
+  },
+  ns = "memscore"
+)
+```
+
+```{r manifest-data, include = FALSE}
+manifest_df <- data.frame(
+  path = c(
+    "images/beach.jpg",
+    "images/museum.jpg",
+    "images/street.jpg",
+    "images/forest.jpg",
+    "images/station.jpg",
+    "images/cafe.jpg",
+    "images/desert.jpg",
+    "images/kitchen.jpg"
+  ),
+  score = c(0.72, 0.68, 0.63, 0.49, 0.61, 0.58, 0.47, 0.52),
+  split = c("train", "train", "train", "train", "val", "test", "test", "test"),
+  id = c("beach", "museum", "street", "forest", "station", "cafe", "desert", "kitchen"),
+  stringsAsFactors = FALSE
+)
+manifest_path <- tempfile(fileext = ".csv")
+write.csv(manifest_df, manifest_path, row.names = FALSE)
+```
+
+## What does a custom benchmark look like?
+
+The shortest useful path is to point `memscore_benchmark_manifest()` at a CSV
+with image paths, targets, and split labels.
+
+```{r quick-win}
+benchmark <- memscore_benchmark_manifest(
+  manifest = manifest_path,
+  root = tempdir(),
+  clip_models = c("ViT-B-32", "RN50"),
+  regressors = "ridge"
+)
+
+benchmark$summary$delta_vs_resmem
+stopifnot(benchmark$summary$delta_vs_resmem$spearman > 0)
+stopifnot(benchmark$summary$delta_vs_resmem$mse < 0)
+```
+
+That quick check answers the main question: did the best CLIP challenger beat
+the released `ResMem` baseline on the held-out test set?
+
+## What does the manifest need to contain?
+
+The manifest is just a small table with `path`, `score`, and `split`, plus an
+optional `id`. Here is the example used above.
+
+```{r show-manifest}
+manifest_df
+stopifnot(all(c("path", "score", "split", "id") %in% names(manifest_df)))
+stopifnot(all(manifest_df$score >= 0 & manifest_df$score <= 1))
+stopifnot(all(sort(unique(manifest_df$split)) == c("test", "train", "val")))
+```
+
+## How do you inspect per-image outputs?
+
+The benchmark call writes a test-set prediction table that is useful for error
+analysis and plotting.
+
+```{r read-predictions}
+predictions <- read.csv(benchmark$output_predictions, stringsAsFactors = FALSE)
+predictions
+stopifnot(file.exists(benchmark$output_predictions))
+stopifnot(all(is.finite(predictions$clip_prediction)))
+stopifnot(nrow(predictions) == 3)
+```
+
+```{r compare-errors}
+predictions$resmem_abs_error <- abs(predictions$ground_truth - predictions$resmem_prediction)
+predictions$clip_abs_error <- abs(predictions$ground_truth - predictions$clip_prediction)
+
+predictions[, c("id", "resmem_abs_error", "clip_abs_error")]
+stopifnot(mean(predictions$clip_abs_error) < mean(predictions$resmem_abs_error))
+```
+
+```{r plot-errors, echo = FALSE}
+error_means <- c(
+  ResMem = mean(predictions$resmem_abs_error),
+  CLIP = mean(predictions$clip_abs_error)
+)
+barplot(
+  error_means,
+  ylim = c(0, max(error_means) * 1.25),
+  col = c("#B8B8B8", "#3F7CAC"),
+  ylab = "Mean absolute error",
+  main = "Held-out error on the mocked test set"
+)
+```
+
+The challenger has lower average error in this example, which matches the
+summary metrics returned by `benchmark$summary$delta_vs_resmem`.
+
+## How do you summarize a FIGRIM study?
+
+Once you want something closer to the repeated-study results used in this repo,
+`memscore_study_figrim()` returns a summary table across protocols and model
+configurations.
+
+```{r run-figrim}
+study <- memscore_study_figrim(
+  figrim_root = tempdir(),
+  clip_models = c("ViT-B-32", "RN50", "ViT-B-16"),
+  clip_tta = "fivecrop"
+)
+
+study_rows <- study$study$summary_rows
+study_rows
+stopifnot(all(is.finite(study_rows$model_mean_spearman)))
+stopifnot(all(study_rows$mean_delta_spearman > 0))
+```
+
+```{r plot-figrim, echo = FALSE}
+barplot(
+  study_rows$mean_delta_spearman,
+  names.arg = study_rows$protocol,
+  col = c("#3F7CAC", "#2A9D8F"),
+  ylab = "Mean delta Spearman vs ResMem",
+  main = "Mocked FIGRIM study improvement"
+)
+abline(h = 0, lty = 2)
+```
+
+In a real study, that summary table is the object you would write to disk,
+filter, and turn into a paper table or figure.
+
+## What should you reach for next?
+
+- Use `memscore_benchmark_manifest()` when you already have your own split file.
+- Use `memscore_benchmark_lamem()` when you want the official LaMem split
+  workflow.
+- Use `memscore_study_figrim()` when you want repeated FIGRIM comparisons and
+  summary tables rather than a single held-out test split.

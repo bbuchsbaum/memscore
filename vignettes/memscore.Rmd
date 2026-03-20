@@ -5,9 +5,21 @@ vignette: >
   %\VignetteIndexEntry{Getting Started with memscore}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
+params:
+  family: red
+  preset: homage
+css: albers.css
+resource_files:
+- albers.css
+- albers.js
+includes:
+  in_header: |-
+    <script src="albers.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('palette-red');});</script>
 ---
 
 ```{r setup, include = FALSE}
+if (requireNamespace("ggplot2", quietly = TRUE) && requireNamespace("albersdown", quietly = TRUE)) ggplot2::theme_set(albersdown::theme_albers(family = params$family, preset = params$preset))
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -22,78 +34,85 @@ library(memscore)
 
 ## What does memscore do?
 
-`memscore` gives R users access to the Python `memscore` command line tools
-without `reticulate`. You configure a backend once, then call ordinary R
-functions such as `memscore_predict()` or `memscore_benchmark_manifest()`.
+`memscore` gives R users access to the Python `memscore` package from ordinary
+R functions. You can run it in-process through `reticulate`, or fall back to a
+CLI bridge when that is more convenient for deployment.
 
 This vignette uses a mocked backend so the examples run during package checks.
 The public R API and return values are the same as in a real session.
 
 ```{r mock-backend, include = FALSE}
 assignInNamespace(
-  ".system2",
-  function(command, args, stdout = TRUE, stderr = TRUE) {
-    subcommand <- args[[1]]
+  ".predict_via_reticulate",
+  function(...) {
+    data.frame(
+      id = c("beach", "forest"),
+      image_path = c("/tmp/beach.jpg", "/tmp/forest.jpg"),
+      memorability = c(0.72, 0.54),
+      stringsAsFactors = FALSE
+    )
+  },
+  ns = "memscore"
+)
 
-    if (identical(subcommand, "predict")) {
-      return(c(
-        "Wrote predictions to /tmp/preds.csv",
-        '[{"id":"beach","image_path":"/tmp/beach.jpg","memorability":0.72},',
-        '{"id":"forest","image_path":"/tmp/forest.jpg","memorability":0.54}]'
-      ))
-    }
+assignInNamespace(
+  ".benchmark_manifest_via_reticulate",
+  function(...) {
+    json_path <- tempfile("memscore-benchmark-", fileext = ".json")
+    pred_path <- tempfile("memscore-predictions-", fileext = ".csv")
+    writeLines(
+      c(
+        "{",
+        '  "dataset": "manifest",',
+        '  "delta_vs_resmem": {',
+        '    "spearman": 0.18,',
+        '    "mse": -0.012',
+        "  },",
+        '  "best_clip": {"clip_model": "ViT-B-32", "regressor": "ridge"}',
+        "}"
+      ),
+      json_path
+    )
+    writeLines(
+      "id,image_path,ground_truth,resmem_prediction,clip_prediction\nbeach,/tmp/beach.jpg,0.70,0.61,0.74",
+      pred_path
+    )
+    list(
+      summary = jsonlite::read_json(json_path, simplifyVector = TRUE),
+      output_json = json_path,
+      output_predictions = pred_path,
+      stdout = character()
+    )
+  },
+  ns = "memscore"
+)
 
-    if (identical(subcommand, "benchmark-manifest")) {
-      json_path <- args[match("--output-json", args) + 1L]
-      pred_path <- args[match("--output-predictions", args) + 1L]
-      writeLines(
-        c(
-          "{",
-          '  "dataset": "manifest",',
-          '  "delta_vs_resmem": {',
-          '    "spearman": 0.18,',
-          '    "mse": -0.012',
-          "  },",
-          '  "best_clip": {"clip_model": "ViT-B-32", "regressor": "ridge"}',
-          "}"
-        ),
-        json_path
-      )
-      writeLines(
-        "id,image_path,ground_truth,resmem_prediction,clip_prediction\nbeach,/tmp/beach.jpg,0.70,0.61,0.74",
-        pred_path
-      )
-      return(c(
-        sprintf("Wrote summary to %s", json_path),
-        sprintf("Wrote test predictions to %s", pred_path)
-      ))
-    }
-
-    if (identical(subcommand, "study-figrim")) {
-      json_path <- args[match("--output-json", args) + 1L]
-      csv_path <- args[match("--output-csv", args) + 1L]
-      writeLines(
-        c(
-          "{",
-          '  "summary_rows": [',
-          '    {"protocol": "across_category", "model_mean_spearman": 0.74},',
-          '    {"protocol": "within_category", "model_mean_spearman": 0.64}',
-          "  ]",
-          "}"
-        ),
-        json_path
-      )
-      writeLines(
-        "protocol,model_mean_spearman\nacross_category,0.74\nwithin_category,0.64",
-        csv_path
-      )
-      return(c(
-        sprintf("Wrote study JSON to %s", json_path),
-        sprintf("Wrote study CSV to %s", csv_path)
-      ))
-    }
-
-    stop("Unexpected mocked subcommand: ", subcommand, call. = FALSE)
+assignInNamespace(
+  ".study_figrim_via_reticulate",
+  function(...) {
+    study_path <- tempfile("memscore-figrim-", fileext = ".json")
+    csv_path <- tempfile("memscore-figrim-", fileext = ".csv")
+    writeLines(
+      c(
+        "{",
+        '  "summary_rows": [',
+        '    {"protocol": "across_category", "model_mean_spearman": 0.74},',
+        '    {"protocol": "within_category", "model_mean_spearman": 0.64}',
+        "  ]",
+        "}"
+      ),
+      study_path
+    )
+    writeLines(
+      "protocol,model_mean_spearman\nacross_category,0.74\nwithin_category,0.64",
+      csv_path
+    )
+    list(
+      study = jsonlite::read_json(study_path, simplifyVector = TRUE),
+      output_json = study_path,
+      output_csv = csv_path,
+      stdout = character()
+    )
   },
   ns = "memscore"
 )
@@ -101,18 +120,28 @@ assignInNamespace(
 
 ## How do you configure the backend?
 
-Point R at either a `memscore` executable or a Python interpreter that can run
-`python -m memscore`.
+The recommended path is to point R at a Python interpreter and set
+`backend = "reticulate"`.
 
 ```{r configure}
 memscore_configure(
   python = "/usr/bin/python3",
+  backend = "reticulate",
   workdir = tempdir()
 )
 
-info <- memscore_cli_info()
-info
-stopifnot(info$source %in% c("path-cli", "python-module"))
+getOption("memscore.backend")
+stopifnot(identical(getOption("memscore.backend"), "reticulate"))
+```
+
+If you need a pure command-line fallback instead, you can force that explicitly.
+
+```{r configure-cli, eval = FALSE}
+memscore_configure(
+  cli = "/path/to/memscore",
+  backend = "cli",
+  workdir = "/path/to/memscore"
+)
 ```
 
 ## How do you score images?
@@ -162,7 +191,7 @@ file.exists(benchmark$output_predictions)
 ## How do you launch the FIGRIM study?
 
 For repeated FIGRIM comparisons, `memscore_study_figrim()` exposes the same
-workflow that the Python CLI uses.
+workflow regardless of whether you route through `reticulate` or the CLI.
 
 ```{r study-figrim}
 study <- memscore_study_figrim(

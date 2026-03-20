@@ -28,6 +28,7 @@ memscore_study_figrim(
   ensemble_weight_step = 0.05,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 )
 }
@@ -83,6 +84,9 @@ ensembling.}
 \item{cli}{Optional explicit path to a \code{memscore} executable.}
 
 \item{python}{Optional explicit path to a Python interpreter.}
+
+\item{backend}{Backend mode. Use \code{"cli"} to force command-line execution or
+\code{"reticulate"} to call the Python package in-process.}
 
 \item{workdir}{Optional working directory for backend execution.}
 }

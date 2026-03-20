@@ -4,12 +4,15 @@
 #'
 #' - a `memscore` executable on `PATH`, or
 #' - a Python interpreter that can run `python -m memscore`
+#' - a `reticulate` bridge to the Python package itself
 #'
 #' These settings are stored as R options and are used by the other package
 #' functions.
 #'
 #' @param cli Optional explicit path to a `memscore` executable.
 #' @param python Optional explicit path to a Python interpreter.
+#' @param backend Backend mode. Use `"cli"` to force command-line execution or
+#'   `"reticulate"` to call the Python package through `reticulate`.
 #' @param module Python module name to run when using a Python backend.
 #' @param workdir Optional working directory for backend execution. This is
 #'   useful during local development when running `python -m memscore` from a
@@ -21,12 +24,15 @@
 #' info <- memscore_cli_info(cli = "/usr/local/bin/memscore")
 #' info$source
 #' @export
-memscore_configure <- function(cli = NULL, python = NULL, module = "memscore", workdir = NULL) {
+memscore_configure <- function(cli = NULL, python = NULL, backend = NULL, module = "memscore", workdir = NULL) {
   if (!is.null(cli)) {
     options(memscore.cli = cli)
   }
   if (!is.null(python)) {
     options(memscore.python = python)
+  }
+  if (!is.null(backend)) {
+    options(memscore.backend = .normalize_backend(backend))
   }
   if (!is.null(module)) {
     options(memscore.module = module)
@@ -35,7 +41,15 @@ memscore_configure <- function(cli = NULL, python = NULL, module = "memscore", w
     options(memscore.workdir = workdir)
   }
 
-  invisible(memscore_cli_info())
+  invisible(
+    .resolve_memscore_backend(
+      backend = getOption("memscore.backend", "auto"),
+      cli = getOption("memscore.cli"),
+      python = getOption("memscore.python"),
+      module = getOption("memscore.module", "memscore"),
+      workdir = getOption("memscore.workdir")
+    )
+  )
 }
 
 #' Inspect the resolved memscore backend

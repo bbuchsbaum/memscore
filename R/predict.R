@@ -1,7 +1,7 @@
 #' Score image memorability
 #'
-#' Scores one or more image files or directories using the external `memscore`
-#' backend.
+#' Scores one or more image files or directories using either the command-line
+#' backend or the optional `reticulate` bridge.
 #'
 #' @param paths Character vector of image files or directories.
 #' @param recursive Recurse into subdirectories when a path is a directory.
@@ -12,6 +12,8 @@
 #' @param output Optional CSV path for backend-generated predictions.
 #' @param cli Optional explicit path to a `memscore` executable.
 #' @param python Optional explicit path to a Python interpreter.
+#' @param backend Backend mode. Use `"cli"` to force command-line execution or
+#'   `"reticulate"` to call the Python package in-process.
 #' @param workdir Optional working directory for backend execution.
 #'
 #' @return A data frame with `id`, `image_path`, and `memorability`.
@@ -36,9 +38,35 @@ memscore_predict <- function(
   output = NULL,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 ) {
   stopifnot(is.character(paths), length(paths) >= 1L)
+
+  backend_info <- .resolve_memscore_backend(
+    backend = backend,
+    cli = cli,
+    python = python,
+    module = getOption("memscore.module", "memscore"),
+    workdir = workdir
+  )
+
+  if (identical(backend_info$kind, "reticulate")) {
+    return(
+      .predict_via_reticulate(
+        paths = paths,
+        recursive = recursive,
+        batch_size = batch_size,
+        device = device,
+        cache_dir = cache_dir,
+        resmem_checkpoint = resmem_checkpoint,
+        output = output,
+        python = backend_info$python,
+        module = backend_info$module,
+        workdir = backend_info$workdir
+      )
+    )
+  }
 
   args <- c("predict", vapply(paths, .normalize_optional_path, character(1)))
   args <- .append_flag(args, "--recursive", recursive)
@@ -49,7 +77,7 @@ memscore_predict <- function(
   args <- .append_flag(args, "--output", output)
 
   output_lines <- .run_memscore_cli(
-    memscore_cli_info(cli = cli, python = python, workdir = workdir),
+    backend_info,
     args = args
   )
 

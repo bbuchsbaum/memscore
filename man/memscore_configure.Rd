@@ -7,6 +7,7 @@
 memscore_configure(
   cli = NULL,
   python = NULL,
+  backend = NULL,
   module = "memscore",
   workdir = NULL
 )
@@ -15,6 +16,9 @@ memscore_configure(
 \item{cli}{Optional explicit path to a \code{memscore} executable.}
 
 \item{python}{Optional explicit path to a Python interpreter.}
+
+\item{backend}{Backend mode. Use \code{"cli"} to force command-line execution or
+\code{"reticulate"} to call the Python package through \code{reticulate}.}
 
 \item{module}{Python module name to run when using a Python backend.}
 
@@ -32,6 +36,7 @@ Invisibly returns the resolved backend configuration.
 \itemize{
 \item a \code{memscore} executable on \code{PATH}, or
 \item a Python interpreter that can run \verb{python -m memscore}
+\item a \code{reticulate} bridge to the Python package itself
 }
 
 These settings are stored as R options and are used by the other package

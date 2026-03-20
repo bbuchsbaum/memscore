@@ -55,8 +55,44 @@ memscore_benchmark_manifest <- function(
   clip_tta_resize = NULL,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 ) {
+  backend_info <- .resolve_memscore_backend(
+    backend = backend,
+    cli = cli,
+    python = python,
+    module = getOption("memscore.module", "memscore"),
+    workdir = workdir
+  )
+
+  if (identical(backend_info$kind, "reticulate")) {
+    return(
+      .benchmark_manifest_via_reticulate(
+        manifest = manifest,
+        root = root,
+        clip_models = clip_models,
+        clip_pretrained = clip_pretrained,
+        regressors = regressors,
+        batch_size = batch_size,
+        device = device,
+        cache_dir = cache_dir,
+        resmem_checkpoint = resmem_checkpoint,
+        output_json = output_json,
+        output_predictions = output_predictions,
+        random_state = random_state,
+        limit_train = limit_train,
+        limit_val = limit_val,
+        limit_test = limit_test,
+        clip_tta = clip_tta,
+        clip_tta_resize = clip_tta_resize,
+        python = backend_info$python,
+        module = backend_info$module,
+        workdir = backend_info$workdir
+      )
+    )
+  }
+
   output_json <- output_json %||% tempfile("memscore-benchmark-", fileext = ".json")
   output_predictions <- output_predictions %||% tempfile("memscore-predictions-", fileext = ".csv")
 
@@ -79,7 +115,7 @@ memscore_benchmark_manifest <- function(
   args <- .append_flag(args, "--clip-tta-resize", clip_tta_resize)
 
   stdout <- .run_memscore_cli(
-    memscore_cli_info(cli = cli, python = python, workdir = workdir),
+    backend_info,
     args = args
   )
 
@@ -140,8 +176,48 @@ memscore_benchmark_lamem <- function(
   clip_tta_resize = NULL,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 ) {
+  backend_info <- .resolve_memscore_backend(
+    backend = backend,
+    cli = cli,
+    python = python,
+    module = getOption("memscore.module", "memscore"),
+    workdir = workdir
+  )
+
+  if (identical(backend_info$kind, "reticulate")) {
+    return(
+      .benchmark_lamem_via_reticulate(
+        lamem_root = lamem_root,
+        splits_dir = splits_dir,
+        fold = fold,
+        train_file = train_file,
+        val_file = val_file,
+        test_file = test_file,
+        clip_models = clip_models,
+        clip_pretrained = clip_pretrained,
+        regressors = regressors,
+        batch_size = batch_size,
+        device = device,
+        cache_dir = cache_dir,
+        resmem_checkpoint = resmem_checkpoint,
+        output_json = output_json,
+        output_predictions = output_predictions,
+        random_state = random_state,
+        limit_train = limit_train,
+        limit_val = limit_val,
+        limit_test = limit_test,
+        clip_tta = clip_tta,
+        clip_tta_resize = clip_tta_resize,
+        python = backend_info$python,
+        module = backend_info$module,
+        workdir = backend_info$workdir
+      )
+    )
+  }
+
   output_json <- output_json %||% tempfile("memscore-lamem-", fileext = ".json")
   output_predictions <- output_predictions %||% tempfile("memscore-lamem-predictions-", fileext = ".csv")
 
@@ -171,7 +247,7 @@ memscore_benchmark_lamem <- function(
   args <- .append_flag(args, "--clip-tta-resize", clip_tta_resize)
 
   stdout <- .run_memscore_cli(
-    memscore_cli_info(cli = cli, python = python, workdir = workdir),
+    backend_info,
     args = args
   )
 
@@ -238,8 +314,48 @@ memscore_study_figrim <- function(
   ensemble_weight_step = 0.05,
   cli = getOption("memscore.cli"),
   python = getOption("memscore.python"),
+  backend = getOption("memscore.backend", "auto"),
   workdir = getOption("memscore.workdir")
 ) {
+  backend_info <- .resolve_memscore_backend(
+    backend = backend,
+    cli = cli,
+    python = python,
+    module = getOption("memscore.module", "memscore"),
+    workdir = workdir
+  )
+
+  if (identical(backend_info$kind, "reticulate")) {
+    return(
+      .study_figrim_via_reticulate(
+        figrim_root = figrim_root,
+        protocols = protocols,
+        score_types = score_types,
+        clip_models = clip_models,
+        clip_pretrained = clip_pretrained,
+        clip_tta = clip_tta,
+        clip_tta_resize = clip_tta_resize,
+        pca_dims = pca_dims,
+        pls_dims = pls_dims,
+        num_splits = num_splits,
+        train_size = train_size,
+        val_size = val_size,
+        test_size = test_size,
+        batch_size = batch_size,
+        device = device,
+        cache_dir = cache_dir,
+        resmem_checkpoint = resmem_checkpoint,
+        output_json = output_json,
+        output_csv = output_csv,
+        random_state = random_state,
+        ensemble_weight_step = ensemble_weight_step,
+        python = backend_info$python,
+        module = backend_info$module,
+        workdir = backend_info$workdir
+      )
+    )
+  }
+
   output_json <- output_json %||% tempfile("memscore-figrim-", fileext = ".json")
   output_csv <- output_csv %||% tempfile("memscore-figrim-", fileext = ".csv")
 
@@ -271,7 +387,7 @@ memscore_study_figrim <- function(
   }
 
   stdout <- .run_memscore_cli(
-    memscore_cli_info(cli = cli, python = python, workdir = workdir),
+    backend_info,
     args = args
   )
 

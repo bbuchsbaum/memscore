@@ -1,13 +1,3 @@
-`%||%` <- function(x, y) {
-  if (is.null(x) || length(x) == 0L) {
-    return(y)
-  }
-  if (is.character(x) && length(x) == 1L && !nzchar(x)) {
-    return(y)
-  }
-  x
-}
-
 .system2 <- function(command, args, stdout = TRUE, stderr = TRUE) {
   system2(command = command, args = args, stdout = stdout, stderr = stderr)
 }

@@ -5,7 +5,7 @@
 It has two user-facing layers:
 
 - a Python CLI and API for scoring images and running benchmarks
-- a native R wrapper package that shells out to the Python backend without `reticulate`
+- a native R wrapper package that can use either `reticulate` or the CLI backend
 
 The package currently ships the released `ResMem` model as the default scorer and includes benchmark workflows for simpler frozen CLIP challengers.
 
@@ -48,6 +48,17 @@ The R package does not bundle Python itself. It expects either:
 
 - a `memscore` executable on `PATH`, or
 - a Python interpreter that can run `python -m memscore`
+
+If you want to avoid the CLI path entirely, configure the R wrapper to use
+`reticulate` instead:
+
+```r
+memscore::memscore_configure(
+  python = "/path/to/python",
+  backend = "reticulate",
+  workdir = "/path/to/repo"
+)
+```
 
 ## Get Started In Python
 
@@ -131,8 +142,9 @@ benchmark$summary$delta_vs_resmem
 
 ## Documentation
 
-- Python docs: [docs/index.rst](docs/index.rst)
-- R vignette source: [vignettes/memscore.Rmd](vignettes/memscore.Rmd)
+- Python docs: [python-docs/index.rst](python-docs/index.rst)
+- R getting-started vignette: [vignettes/memscore.Rmd](vignettes/memscore.Rmd)
+- R benchmarking vignette: [vignettes/benchmarking.Rmd](vignettes/benchmarking.Rmd)
 - Benchmark guide: [BENCHMARKS.md](BENCHMARKS.md)
 
 ## Repository Layout
@@ -142,7 +154,8 @@ benchmark$summary$delta_vs_resmem
 - `resmem_legacy/`: internal packaged copy of the released ResMem baseline code
 - `R/`: native R wrapper package
 - `vignettes/`: R package articles
-- `docs/`: Sphinx documentation for the Python and mixed-language workflows
+- `python-docs/`: Sphinx documentation source for the Python and mixed-language workflows
+- `docs/`: pkgdown site output
 - `pytests/`: Python tests
 - `tests/testthat/`: R tests
 
@@ -155,3 +168,8 @@ The current best practical FIGRIM challenger in this repo is:
 - mean ensemble across the ridge heads
 
 See [BENCHMARKS.md](BENCHMARKS.md) for commands, manifest format, and study workflows.
+
+<!-- albersdown:theme-note:start -->
+## Albers theme
+This package uses the albersdown theme. Existing vignette theme hooks are replaced so `albers.css` and local `albers.js` render consistently on CRAN and GitHub Pages. The defaults are configured via `params$family` and `params$preset` (family = 'red', preset = 'homage'). The pkgdown site uses `template: { package: albersdown }`.
+<!-- albersdown:theme-note:end -->

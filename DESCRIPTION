@@ -3,19 +3,26 @@ Title: R Interface to the Memscore Command Line Tools
 Version: 0.0.0.9000
 Authors@R: 
     person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
-Description: Native R wrappers for the memscore command line interface.
+Description: Native R wrappers for the memscore Python tooling.
     The package scores image memorability, runs challenger benchmarks,
-    and launches repeated FIGRIM studies by invoking an external command
-    line backend with system2(), so it does not require reticulate.
+    and launches repeated FIGRIM studies through either an optional
+    reticulate backend or an external command line backend.
 License: MIT + file LICENSE
+URL: https://bbuchsbaum.github.io/memscore/,
+    https://github.com/bbuchsbaum/memscore
+BugReports: https://github.com/bbuchsbaum/memscore/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     jsonlite
 Suggests:
+    albersdown,
+    ggplot2,
     knitr,
+    reticulate,
     rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Config/Needs/website: albersdown

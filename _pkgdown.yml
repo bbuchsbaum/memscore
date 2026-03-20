@@ -1,0 +1,5 @@
+url: https://bbuchsbaum.github.io/memscore/
+
+template:
+  package: albersdown
+  bootstrap: 5.0
