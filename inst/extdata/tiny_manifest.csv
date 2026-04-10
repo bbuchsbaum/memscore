@@ -1,0 +1,4 @@
+path,score,split,id
+images/red_square.png,0.20,train,red_square
+images/green_diagonal.png,0.55,val,green_diagonal
+images/blue_circle.png,0.85,test,blue_circle

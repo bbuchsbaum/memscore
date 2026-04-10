@@ -59,6 +59,36 @@ test_that("memscore_benchmark_manifest can dispatch through the reticulate backe
   expect_identical(result$stdout, character())
 })
 
+test_that("memscore_benchmark_standard can dispatch through the reticulate backend", {
+  manifest <- tempfile(fileext = ".csv")
+  writeLines("path,score,split\nimg1.jpg,0.5,test", manifest)
+
+  testthat::local_mocked_bindings(
+    .resolve_memscore_backend = function(...) {
+      list(
+        kind = "reticulate",
+        source = "reticulate",
+        python = "/usr/bin/python3",
+        module = "memscore",
+        workdir = "/tmp"
+      )
+    },
+    .benchmark_standard_via_reticulate = function(...) {
+      list(
+        summary = list(standard_model = list(summary = list(mean_spearman = 0.75))),
+        output_json = "/tmp/standard.json",
+        stdout = character()
+      )
+    },
+    .package = "memscore"
+  )
+
+  result <- memscore_benchmark_standard(manifest = manifest, backend = "reticulate")
+
+  expect_equal(result$summary$standard_model$summary$mean_spearman, 0.75)
+  expect_identical(result$stdout, character())
+})
+
 test_that("memscore_study_figrim can dispatch through the reticulate backend", {
   testthat::local_mocked_bindings(
     .resolve_memscore_backend = function(...) {

@@ -5,8 +5,9 @@ Authors@R:
     person("Brad", "Buchsbaum", email = "brad.buchsbaum@gmail.com", role = c("aut", "cre"))
 Description: Native R wrappers for the memscore Python tooling.
     The package scores image memorability, runs challenger benchmarks,
-    and launches repeated FIGRIM studies through either an optional
-    reticulate backend or an external command line backend.
+    evaluates the standard frozen CLIP ensemble, and launches repeated
+    FIGRIM studies through either an optional reticulate backend or an
+    external command line backend.
 License: MIT + file LICENSE
 URL: https://bbuchsbaum.github.io/memscore/,
     https://github.com/bbuchsbaum/memscore

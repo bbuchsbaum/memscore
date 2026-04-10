@@ -4,11 +4,14 @@
 .Rproj.user/
 .cache/
 .venv/
+.venv312/
 _vendor/
 resmem/
+lamem/
 *.Rcheck/
 *.tar.gz
 results/
+data/
 __pycache__/
 *.pyc
 .pytest_cache/

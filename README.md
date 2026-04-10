@@ -7,7 +7,12 @@ It has two user-facing layers:
 - a Python CLI and API for scoring images and running benchmarks
 - a native R wrapper package that can use either `reticulate` or the CLI backend
 
-The package currently ships the released `ResMem` model as the default scorer and includes benchmark workflows for simpler frozen CLIP challengers.
+The package ships the released `ResMem` model for direct image scoring and first-class benchmark workflows for frozen CLIP challengers. The recommended out-of-sample benchmark model is now the standard `memscore` ensemble:
+
+- frozen `ViT-B-32 + RN50 + ViT-B-16`
+- five-crop CLIP embeddings at resize 256
+- one ridge head per backbone
+- final score = plain mean of the three ridge predictions
 
 ## Install
 
@@ -21,10 +26,16 @@ python -m pip install .
 
 ### Python scoring plus benchmark extras
 
-Install the benchmark dependencies when you want frozen CLIP challengers, LaMem benchmarking, or FIGRIM studies:
+Install the benchmark dependencies when you want the standard `memscore` ensemble, frozen CLIP challengers, LaMem benchmarking, or FIGRIM studies:
 
 ```bash
 python -m pip install ".[benchmark]"
+```
+
+The equivalent focused extra is:
+
+```bash
+python -m pip install ".[standard]"
 ```
 
 ### Python docs
@@ -37,11 +48,18 @@ python -m pip install ".[docs]"
 
 ### R package
 
-Install the R wrapper from a clone of this repository:
+Install the R wrapper from a clean clone of this repository:
 
 ```r
 install.packages("pak")
 pak::pak("local::.")
+```
+
+If this working tree contains large local datasets, caches, or virtualenvs, use the curated installer instead. It stages only the R package files before installation:
+
+```r
+source("scripts/install_r_package.R")
+install_memscore_r()
 ```
 
 The R package does not bundle Python itself. It expects either:
@@ -86,6 +104,15 @@ memscore benchmark-manifest \
   --regressors ridge
 ```
 
+Run the standardized out-of-sample model on a locked train/val/test manifest:
+
+```bash
+memscore benchmark-standard \
+  --manifest /path/to/manifest.csv \
+  --root /path/to/images \
+  --output-json results/standard_benchmark.json
+```
+
 Run the repeated FIGRIM study:
 
 ```bash
@@ -100,10 +127,13 @@ memscore study-figrim \
 The public Python API is intentionally small:
 
 ```python
-from memscore import predict_paths, benchmark_manifest, benchmark_lamem, study_figrim
+from memscore import predict_paths, benchmark_standard_manifest
 
 predictions = predict_paths(["images/example.jpg"])
 print(predictions[0].score)
+
+result = benchmark_standard_manifest("manifest.csv", root="images")
+print(result["standard_model"]["summary"]["mean_spearman"])
 ```
 
 ## Get Started In R
@@ -128,16 +158,17 @@ scores <- memscore_predict(c("image1.jpg", "image2.jpg"))
 scores[, c("id", "memorability")]
 ```
 
-Run a benchmark from R:
+Run the standard benchmark from R:
 
 ```r
-benchmark <- memscore_benchmark_manifest(
-  manifest = "manifest.csv",
-  clip_models = c("ViT-B-32", "RN50"),
-  regressors = "ridge"
+manifest <- system.file("extdata/tiny_manifest.csv", package = "memscore")
+
+benchmark <- memscore_benchmark_standard(
+  manifest = manifest,
+  root = dirname(manifest)
 )
 
-benchmark$summary$delta_vs_resmem
+benchmark$summary$standard_model$comparison_vs_resmem
 ```
 
 ## Documentation
@@ -161,11 +192,12 @@ benchmark$summary$delta_vs_resmem
 
 ## Benchmark Notes
 
-The current best practical FIGRIM challenger in this repo is:
+The recommended uniform out-of-sample model in this repo is:
 
 - frozen `ViT-B/32 + RN50 + ViT-B/16`
-- `fivecrop` CLIP embeddings
-- mean ensemble across the ridge heads
+- `fivecrop` CLIP embeddings at resize 256
+- separate ridge head per backbone
+- plain mean ensemble across the ridge predictions
 
 See [BENCHMARKS.md](BENCHMARKS.md) for commands, manifest format, and study workflows.
 

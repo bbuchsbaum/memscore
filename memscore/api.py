@@ -10,8 +10,20 @@ import numpy as np
 from membench.clip_regression import run_clip_regression
 from membench.data import DatasetSplits, Record, load_lamem_splits, load_manifest
 from membench.figrim import parse_pca_dims, parse_positive_dims, run_figrim_study, write_study_outputs
+from membench.lamem import run_lamem_study
+from membench.locked_ensemble import run_locked_ensemble_benchmark
+from membench.manifest_study import run_manifest_study
+from membench.memcat import run_memcat_study
 from membench.metrics import compute_metrics
 from membench.resmem_baseline import ResMemScorer, ensure_resmem_checkpoint
+from membench.lora_head import run_pooled_lora_head
+from membench.supervised_head import run_lodo_embedding_head, run_multihead_embedding_head, run_pooled_embedding_head
+from .defaults import (
+    STANDARD_CLIP_MODELS,
+    STANDARD_CLIP_PRETRAINED,
+    STANDARD_CLIP_TTA_MODE,
+    STANDARD_CLIP_TTA_RESIZE,
+)
 
 PathLike = Union[str, Path]
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
@@ -337,6 +349,55 @@ def benchmark_lamem(
     )
 
 
+def benchmark_standard_manifest(
+    manifest_path: PathLike,
+    *,
+    root: Optional[PathLike] = None,
+    dataset_name: Optional[str] = None,
+    clip_models: Sequence[str] = STANDARD_CLIP_MODELS,
+    clip_pretrained: str = STANDARD_CLIP_PRETRAINED,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    checkpoint_path: Optional[PathLike] = None,
+    tta_mode: str = STANDARD_CLIP_TTA_MODE,
+    tta_resize: Optional[int] = STANDARD_CLIP_TTA_RESIZE,
+    ensemble_weight_step: float = 0.05,
+) -> dict[str, object]:
+    """Run the standard frozen CLIP mean-ensemble benchmark on a locked manifest.
+
+    The standard recipe is three frozen CLIP backbones (``ViT-B-32``, ``RN50``,
+    and ``ViT-B-16``), five-crop embeddings at resize 256, one ridge head per
+    backbone, and a plain mean of the ridge predictions.
+    """
+
+    return run_locked_ensemble_benchmark(
+        manifest_path=manifest_path,
+        root=root,
+        dataset_name=dataset_name,
+        clip_models=list(clip_models),
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=tta_mode,
+        clip_tta_resize=tta_resize,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        ensemble_weight_step=ensemble_weight_step,
+        resmem_checkpoint=checkpoint_path,
+    )
+
+
+def write_standard_benchmark_json(result: dict[str, object], output_path: PathLike) -> Path:
+    """Write a standard benchmark result dictionary as JSON."""
+
+    import json
+
+    destination = Path(output_path).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return destination
+
+
 def write_benchmark_predictions(run: BenchmarkRun, output_path: PathLike) -> Path:
     """Write side-by-side benchmark predictions for the test split."""
 
@@ -456,6 +517,413 @@ def study_figrim(
         test_size=test_size,
         ensemble_weight_step=ensemble_weight_step,
         resmem_checkpoint=checkpoint_path,
+    )
+    if output_json and output_csv:
+        write_study_outputs(study, output_json=output_json, output_csv=output_csv)
+    return study
+
+
+def study_manifest(
+    manifest_path: PathLike,
+    *,
+    root: Optional[PathLike] = None,
+    dataset_name: Optional[str] = None,
+    path_column: str = "path",
+    score_column: str = "score",
+    id_column: Optional[str] = "id",
+    label_column: Optional[str] = None,
+    clip_models: Sequence[str] = ("ViT-B-32", "RN50"),
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    pca_dims: Sequence[str] = ("none", "128", "64", "32"),
+    pls_dims: Sequence[str] = (),
+    num_splits: int = 10,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    random_state: int = 0,
+    train_size: float = 0.7,
+    val_size: float = 0.1,
+    test_size: float = 0.2,
+    ensemble_weight_step: float = 0.05,
+    checkpoint_path: Optional[PathLike] = None,
+    output_json: Optional[PathLike] = None,
+    output_csv: Optional[PathLike] = None,
+    limit_records: Optional[int] = None,
+) -> dict[str, object]:
+    """Run a repeated-splits study from a generic scored-image manifest."""
+
+    study = run_manifest_study(
+        manifest_path=manifest_path,
+        root=root,
+        dataset_name=dataset_name,
+        path_column=path_column,
+        score_column=score_column,
+        id_column=id_column,
+        label_column=label_column,
+        clip_models=list(clip_models),
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        pca_dims=parse_pca_dims(list(pca_dims)),
+        pls_dims=parse_positive_dims(list(pls_dims)),
+        num_splits=num_splits,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        random_state=random_state,
+        train_size=train_size,
+        val_size=val_size,
+        test_size=test_size,
+        ensemble_weight_step=ensemble_weight_step,
+        resmem_checkpoint=checkpoint_path,
+        limit_records=limit_records,
+    )
+    if output_json and output_csv:
+        write_study_outputs(study, output_json=output_json, output_csv=output_csv)
+    return study
+
+
+def study_memcat(
+    memcat_root: PathLike,
+    *,
+    csv_path: Optional[PathLike] = None,
+    score_column: str = "memorability_w_fa_correction",
+    clip_models: Sequence[str] = ("ViT-B-32", "RN50"),
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    pca_dims: Sequence[str] = ("none", "128", "64", "32"),
+    pls_dims: Sequence[str] = (),
+    num_splits: int = 10,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    random_state: int = 0,
+    train_size: float = 0.7,
+    val_size: float = 0.1,
+    test_size: float = 0.2,
+    ensemble_weight_step: float = 0.05,
+    checkpoint_path: Optional[PathLike] = None,
+    output_json: Optional[PathLike] = None,
+    output_csv: Optional[PathLike] = None,
+) -> dict[str, object]:
+    """Run the repeated MemCat study used for ``ResMem`` comparisons.
+
+    Parameters
+    ----------
+    memcat_root:
+        Root directory of the MemCat download.
+    csv_path:
+        Optional explicit path to the MemCat CSV metadata file.
+    score_column:
+        Column name for memorability scores in the CSV.
+    clip_models:
+        One or more frozen CLIP vision backbones.
+    clip_pretrained:
+        ``open_clip`` pretrained tag.
+    clip_tta_mode:
+        CLIP embedding test-time augmentation mode.
+    clip_tta_resize:
+        Optional resize target for test-time augmentation.
+    pca_dims:
+        PCA dimensions to evaluate before ridge regression. Use ``"none"`` for
+        full embeddings.
+    pls_dims:
+        Optional PLS component counts to evaluate.
+    num_splits:
+        Number of repeated stratified train/val/test splits.
+    batch_size:
+        Inference batch size for both ``ResMem`` and CLIP feature extraction.
+    device:
+        Torch device string such as ``"cpu"`` or ``"cuda"``.
+    cache_dir:
+        Cache directory for checkpoints and embeddings.
+    random_state:
+        Starting random seed used to derive repeated split seeds.
+    train_size, val_size, test_size:
+        Fractions assigned to each split.
+    ensemble_weight_step:
+        Step size used when searching validation-weighted ensembles.
+    checkpoint_path:
+        Optional explicit ``ResMem`` checkpoint path.
+    output_json, output_csv:
+        Optional output files written when both are provided.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable study object containing split-level results and a
+        summary table.
+    """
+
+    study = run_memcat_study(
+        memcat_root=memcat_root,
+        csv_path=csv_path,
+        score_column=score_column,
+        clip_models=list(clip_models),
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        pca_dims=parse_pca_dims(list(pca_dims)),
+        pls_dims=parse_positive_dims(list(pls_dims)),
+        num_splits=num_splits,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        random_state=random_state,
+        train_size=train_size,
+        val_size=val_size,
+        test_size=test_size,
+        ensemble_weight_step=ensemble_weight_step,
+        resmem_checkpoint=checkpoint_path,
+    )
+    if output_json and output_csv:
+        write_study_outputs(study, output_json=output_json, output_csv=output_csv)
+    return study
+
+
+def train_pooled_head(
+    dataset_config: PathLike,
+    *,
+    clip_model: str = "ViT-B-32",
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    hidden_dim: int = 256,
+    dropout: float = 0.1,
+    epochs: int = 25,
+    patience: int = 6,
+    learning_rate: float = 3e-4,
+    weight_decay: float = 1e-4,
+    head_batch_size: int = 256,
+    rank_loss_weight: float = 0.2,
+    seed: int = 0,
+    output_json: Optional[PathLike] = None,
+) -> dict[str, object]:
+    """Train a pooled MLP head on frozen CLIP embeddings using locked dataset splits."""
+
+    return run_pooled_embedding_head(
+        dataset_config=dataset_config,
+        clip_model=clip_model,
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        hidden_dim=hidden_dim,
+        dropout=dropout,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        head_batch_size=head_batch_size,
+        rank_loss_weight=rank_loss_weight,
+        seed=seed,
+        output_json=output_json,
+    )
+
+
+def train_lodo_head(
+    dataset_config: PathLike,
+    *,
+    clip_model: str = "ViT-B-32",
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    hidden_dim: int = 256,
+    dropout: float = 0.1,
+    epochs: int = 25,
+    patience: int = 6,
+    learning_rate: float = 3e-4,
+    weight_decay: float = 1e-4,
+    head_batch_size: int = 256,
+    rank_loss_weight: float = 0.2,
+    seed: int = 0,
+    output_json: Optional[PathLike] = None,
+) -> dict[str, object]:
+    """Train a leave-one-dataset-out MLP head on frozen CLIP embeddings."""
+
+    return run_lodo_embedding_head(
+        dataset_config=dataset_config,
+        clip_model=clip_model,
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        hidden_dim=hidden_dim,
+        dropout=dropout,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        head_batch_size=head_batch_size,
+        rank_loss_weight=rank_loss_weight,
+        seed=seed,
+        output_json=output_json,
+    )
+
+
+def train_lora_head(
+    dataset_config: PathLike,
+    *,
+    clip_model: str = "ViT-B-32",
+    clip_pretrained: str = "openai",
+    device: str = "cpu",
+    batch_size: int = 16,
+    eval_batch_size: int = 32,
+    epochs: int = 6,
+    patience: int = 2,
+    lora_rank: int = 4,
+    lora_alpha: float = 16.0,
+    lora_dropout: float = 0.05,
+    num_lora_blocks: int = 2,
+    head_dropout: float = 0.1,
+    lora_learning_rate: float = 1e-4,
+    head_learning_rate: float = 5e-4,
+    weight_decay: float = 1e-4,
+    rank_loss_weight: float = 0.1,
+    train_samples_per_dataset: Optional[int] = 2048,
+    max_grad_norm: float = 1.0,
+    seed: int = 0,
+    output_json: Optional[PathLike] = None,
+) -> dict[str, object]:
+    """Train a small pooled LoRA adapter plus regression head on locked image datasets."""
+
+    return run_pooled_lora_head(
+        dataset_config=dataset_config,
+        clip_model=clip_model,
+        clip_pretrained=clip_pretrained,
+        device=device,
+        batch_size=batch_size,
+        eval_batch_size=eval_batch_size,
+        epochs=epochs,
+        patience=patience,
+        lora_rank=lora_rank,
+        lora_alpha=lora_alpha,
+        lora_dropout=lora_dropout,
+        num_lora_blocks=num_lora_blocks,
+        head_dropout=head_dropout,
+        lora_learning_rate=lora_learning_rate,
+        head_learning_rate=head_learning_rate,
+        weight_decay=weight_decay,
+        rank_loss_weight=rank_loss_weight,
+        train_samples_per_dataset=train_samples_per_dataset,
+        max_grad_norm=max_grad_norm,
+        seed=seed,
+        output_json=output_json,
+    )
+
+
+def train_multihead_head(
+    dataset_config: PathLike,
+    *,
+    clip_model: str = "ViT-B-32",
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    hidden_dim: int = 256,
+    dropout: float = 0.1,
+    epochs: int = 25,
+    patience: int = 6,
+    learning_rate: float = 3e-4,
+    weight_decay: float = 1e-4,
+    head_batch_size: int = 256,
+    rank_loss_weight: float = 0.2,
+    seed: int = 0,
+    output_json: Optional[PathLike] = None,
+) -> dict[str, object]:
+    """Train a shared frozen-embedding trunk with dataset-specific output heads."""
+
+    return run_multihead_embedding_head(
+        dataset_config=dataset_config,
+        clip_model=clip_model,
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        hidden_dim=hidden_dim,
+        dropout=dropout,
+        epochs=epochs,
+        patience=patience,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        head_batch_size=head_batch_size,
+        rank_loss_weight=rank_loss_weight,
+        seed=seed,
+        output_json=output_json,
+    )
+
+
+def study_lamem(
+    lamem_root: PathLike,
+    *,
+    splits_dir: PathLike,
+    fold: int = 1,
+    train_file: Optional[PathLike] = None,
+    val_file: Optional[PathLike] = None,
+    test_file: Optional[PathLike] = None,
+    clip_models: Sequence[str] = ("ViT-B-32", "RN50"),
+    clip_pretrained: str = "openai",
+    clip_tta_mode: str = "none",
+    clip_tta_resize: Optional[int] = None,
+    pca_dims: Sequence[str] = ("none", "128", "64", "32"),
+    pls_dims: Sequence[str] = (),
+    num_splits: int = 3,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    random_state: int = 0,
+    limit_train: Optional[int] = None,
+    limit_val: Optional[int] = None,
+    limit_test: Optional[int] = None,
+    ensemble_weight_step: float = 0.05,
+    checkpoint_path: Optional[PathLike] = None,
+    output_json: Optional[PathLike] = None,
+    output_csv: Optional[PathLike] = None,
+    include_resmem_ensembles: bool = True,
+) -> dict[str, object]:
+    """Run a reduced-cost LaMem study using repeated official-split subsamples."""
+
+    study = run_lamem_study(
+        lamem_root=lamem_root,
+        splits_dir=splits_dir,
+        fold=fold,
+        train_file=train_file,
+        val_file=val_file,
+        test_file=test_file,
+        clip_models=list(clip_models),
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=clip_tta_mode,
+        clip_tta_resize=clip_tta_resize,
+        pca_dims=parse_pca_dims(list(pca_dims)),
+        pls_dims=parse_positive_dims(list(pls_dims)),
+        num_splits=num_splits,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        random_state=random_state,
+        limit_train=limit_train,
+        limit_val=limit_val,
+        limit_test=limit_test,
+        ensemble_weight_step=ensemble_weight_step,
+        resmem_checkpoint=checkpoint_path,
+        include_resmem_ensembles=include_resmem_ensembles,
     )
     if output_json and output_csv:
         write_study_outputs(study, output_json=output_json, output_csv=output_csv)

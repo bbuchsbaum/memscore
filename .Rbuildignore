@@ -1,7 +1,12 @@
 ^\.DS_Store$
 ^\.gitignore$
 (^|/)\.venv($|/).*
+(^|/)\.venv312($|/).*
 (^|/)_vendor($|/).*
+(^|/)build($|/).*
+(^|/)data($|/).*
+(^|/)dist($|/).*
+(^|/)lamem($|/).*
 (^|/)resmem($|/).*
 (^|/)results($|/).*
 ^BENCHMARKS\.md$

@@ -247,6 +247,52 @@
   )
 }
 
+.benchmark_standard_via_reticulate <- function(
+  manifest,
+  root = NULL,
+  dataset_name = NULL,
+  clip_models = c("ViT-B-32", "RN50", "ViT-B-16"),
+  clip_pretrained = "openai",
+  batch_size = 32L,
+  device = "cpu",
+  cache_dir = NULL,
+  resmem_checkpoint = NULL,
+  output_json = NULL,
+  clip_tta = "fivecrop",
+  clip_tta_resize = 256L,
+  ensemble_weight_step = 0.05,
+  python = NULL,
+  module = "memscore",
+  workdir = NULL
+) {
+  api <- .import_memscore_module(python = python, module = module, workdir = workdir)
+  output_json <- output_json %||% tempfile("memscore-standard-", fileext = ".json")
+
+  result <- api$benchmark_standard_manifest(
+    .normalize_optional_path(manifest),
+    root = root %||% NULL,
+    dataset_name = dataset_name %||% NULL,
+    clip_models = as.list(clip_models),
+    clip_pretrained = clip_pretrained,
+    batch_size = as.integer(batch_size),
+    device = device,
+    cache_dir = cache_dir %||% NULL,
+    checkpoint_path = resmem_checkpoint %||% NULL,
+    tta_mode = clip_tta,
+    tta_resize = clip_tta_resize %||% NULL,
+    ensemble_weight_step = ensemble_weight_step
+  )
+
+  summary <- reticulate::py_to_r(result)
+  .write_json_file(summary, output_json)
+
+  list(
+    summary = summary,
+    output_json = .normalize_optional_path(output_json),
+    stdout = character()
+  )
+}
+
 .study_figrim_via_reticulate <- function(
   figrim_root,
   protocols = c("across", "within"),
@@ -281,6 +327,68 @@
     .normalize_optional_path(figrim_root),
     protocols = as.list(protocols),
     score_types = as.list(score_types),
+    clip_models = as.list(clip_models),
+    clip_pretrained = clip_pretrained,
+    clip_tta_mode = clip_tta,
+    clip_tta_resize = clip_tta_resize %||% NULL,
+    pca_dims = as.list(pca_dims),
+    pls_dims = as.list(pls_dims),
+    num_splits = as.integer(num_splits),
+    batch_size = as.integer(batch_size),
+    device = device,
+    cache_dir = cache_dir %||% NULL,
+    random_state = as.integer(random_state),
+    train_size = train_size,
+    val_size = val_size,
+    test_size = test_size,
+    ensemble_weight_step = ensemble_weight_step,
+    checkpoint_path = resmem_checkpoint %||% NULL,
+    output_json = .normalize_optional_path(output_json),
+    output_csv = .normalize_optional_path(output_csv)
+  )
+
+  list(
+    study = reticulate::py_to_r(study),
+    output_json = .normalize_optional_path(output_json),
+    output_csv = .normalize_optional_path(output_csv),
+    stdout = character()
+  )
+}
+
+.study_memcat_via_reticulate <- function(
+  memcat_root,
+  csv_path = NULL,
+  score_column = "memorability_w_fa_correction",
+  clip_models = c("ViT-B-32", "RN50"),
+  clip_pretrained = "openai",
+  clip_tta = "none",
+  clip_tta_resize = NULL,
+  pca_dims = c("none", "128", "64", "32"),
+  pls_dims = character(),
+  num_splits = 10L,
+  train_size = 0.7,
+  val_size = 0.1,
+  test_size = 0.2,
+  batch_size = 32L,
+  device = "cpu",
+  cache_dir = NULL,
+  resmem_checkpoint = NULL,
+  output_json = NULL,
+  output_csv = NULL,
+  random_state = 0L,
+  ensemble_weight_step = 0.05,
+  python = NULL,
+  module = "memscore",
+  workdir = NULL
+) {
+  api <- .import_memscore_module(python = python, module = module, workdir = workdir)
+  output_json <- output_json %||% tempfile("memscore-memcat-", fileext = ".json")
+  output_csv <- output_csv %||% tempfile("memscore-memcat-", fileext = ".csv")
+
+  study <- api$study_memcat(
+    .normalize_optional_path(memcat_root),
+    csv_path = if (!is.null(csv_path)) .normalize_optional_path(csv_path) else NULL,
+    score_column = score_column,
     clip_models = as.list(clip_models),
     clip_pretrained = clip_pretrained,
     clip_tta_mode = clip_tta,

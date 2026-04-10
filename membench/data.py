@@ -20,6 +20,13 @@ class DatasetSplits:
     test: list[Record]
 
 
+@dataclass(frozen=True)
+class RecordDataset:
+    records: list[Record]
+    labels: list[str]
+    label_column: Optional[str]
+
+
 PathLike = Union[Path, str]
 
 
@@ -122,7 +129,31 @@ def load_memcat_records(
     score_column: str = "memorability_w_fa_correction",
 ) -> list[Record]:
     dataset_root = _resolve(root)
-    source_csv = _resolve(csv_path) if csv_path else (dataset_root / "data" / "memcat_image_data.csv")
+    if csv_path:
+        source_csv = _resolve(csv_path)
+    else:
+        # Try both common layouts: <root>/data/memcat_image_data.csv and <root>/memcat_image_data.csv
+        candidate_data = dataset_root / "data" / "memcat_image_data.csv"
+        candidate_root = dataset_root / "memcat_image_data.csv"
+        if candidate_data.exists():
+            source_csv = candidate_data
+        elif candidate_root.exists():
+            source_csv = candidate_root
+        else:
+            raise FileNotFoundError(
+                f"Could not find memcat_image_data.csv in {dataset_root / 'data'} or {dataset_root}. "
+                "Pass csv_path explicitly."
+            )
+
+    # Resolve image directory: try <root>/images then <root>/MemCat then <root>
+    image_base: Path
+    if (dataset_root / "images").is_dir():
+        image_base = Path("images")
+    elif (dataset_root / "MemCat").is_dir():
+        image_base = Path("MemCat")
+    else:
+        image_base = Path(".")
+
     records: list[Record] = []
     with source_csv.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -139,7 +170,7 @@ def load_memcat_records(
             raise KeyError(f"Could not find a memorability score column in {source_csv}")
 
         for row in reader:
-            image_name = row.get("image") or row.get("image_name") or row.get("img")
+            image_name = row.get("image") or row.get("image_file") or row.get("image_name") or row.get("img")
             category = row.get("category") or row.get("supercategory") or row.get("cat")
             subcategory = row.get("subcategory") or row.get("subcat") or row.get("scat")
             if not image_name or not category or not subcategory:
@@ -147,7 +178,7 @@ def load_memcat_records(
                     "MemCat loader expects image/category/subcategory columns. "
                     "Use a custom manifest if your export differs from the published CSV."
                 )
-            rel_path = Path("images") / category / subcategory / image_name
+            rel_path = image_base / category / subcategory / image_name
             records.append(
                 Record(
                     image_path=(dataset_root / rel_path).resolve(),
@@ -184,3 +215,43 @@ def load_manifest(csv_path: PathLike, root: Optional[PathLike] = None) -> Datase
         val=_normalize_records(buckets["val"]),
         test=_normalize_records(buckets["test"]),
     )
+
+
+def load_record_dataset(
+    csv_path: PathLike,
+    *,
+    root: Optional[PathLike] = None,
+    path_column: str = "path",
+    score_column: str = "score",
+    id_column: Optional[str] = "id",
+    label_column: Optional[str] = None,
+) -> RecordDataset:
+    manifest_path = _resolve(csv_path)
+    base_root = _resolve(root) if root else manifest_path.parent
+
+    records: list[Record] = []
+    labels: list[str] = []
+    with manifest_path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise ValueError(f"Missing header row in {manifest_path}")
+        required = {path_column, score_column}
+        if not required.issubset(reader.fieldnames):
+            raise ValueError(f"Dataset manifest must contain columns {sorted(required)}")
+        if label_column and label_column not in reader.fieldnames:
+            raise ValueError(f"Dataset manifest is missing requested label column {label_column!r}")
+        if id_column and id_column not in reader.fieldnames:
+            id_column = None
+
+        for row in reader:
+            rel_path = row[path_column].strip()
+            records.append(
+                Record(
+                    image_path=(base_root / rel_path).resolve(),
+                    score=float(row[score_column]),
+                    identifier=row[id_column] if id_column else rel_path,
+                )
+            )
+            labels.append(row[label_column] if label_column else "__all__")
+
+    return RecordDataset(records=_normalize_records(records), labels=labels, label_column=label_column)

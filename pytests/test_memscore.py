@@ -73,3 +73,28 @@ def test_cli_predict_writes_csv(monkeypatch, tmp_path: Path, capsys) -> None:
     assert rows[1][0] == "sample.jpg"
     assert rows[1][2] == "0.42000000"
     assert "Wrote predictions to" in capsys.readouterr().out
+
+
+def test_cli_benchmark_standard_uses_packaged_defaults(monkeypatch, tmp_path: Path, capsys) -> None:
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,score,split\nimage.jpg,0.5,test\n", encoding="utf-8")
+    output_path = tmp_path / "standard.json"
+    captured_kwargs = {}
+
+    def fake_benchmark_standard_manifest(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            "metadata": {"standard_ensemble": "ensemble_mean"},
+            "standard_model": {"summary": {"mean_spearman": 0.75}},
+        }
+
+    monkeypatch.setattr("memscore.cli.api.benchmark_standard_manifest", fake_benchmark_standard_manifest)
+
+    exit_code = main(["benchmark-standard", "--manifest", str(manifest), "--output-json", str(output_path)])
+
+    assert exit_code == 0
+    assert captured_kwargs["clip_models"] == ["ViT-B-32", "RN50", "ViT-B-16"]
+    assert captured_kwargs["tta_mode"] == "fivecrop"
+    assert captured_kwargs["tta_resize"] == 256
+    assert output_path.exists()
+    assert "Wrote standard benchmark summary" in capsys.readouterr().out

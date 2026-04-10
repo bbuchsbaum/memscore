@@ -1,12 +1,14 @@
 test_that("memscore_predict parses JSON output", {
   calls <- list()
+  image_path <- system.file("extdata/images/red_square.png", package = "memscore", mustWork = TRUE)
 
   testthat::local_mocked_bindings(
     .system2 = function(command, args, stdout = TRUE, stderr = TRUE) {
       calls <<- list(command = command, args = args, stdout = stdout, stderr = stderr)
+      expect_true(file.exists(args[[2]]))
       c(
         "Wrote predictions to /tmp/preds.csv",
-        '[{"id":"img1","image_path":"/tmp/img1.jpg","memorability":0.42}]'
+        sprintf('[{"id":"red_square.png","image_path":"%s","memorability":0.42}]', image_path)
       )
     },
     .package = "memscore"
@@ -16,7 +18,7 @@ test_that("memscore_predict parses JSON output", {
   on.exit(options(old), add = TRUE)
 
   result <- memscore_predict(
-    paths = c("img1.jpg"),
+    paths = c(image_path),
     recursive = TRUE,
     batch_size = 8L,
     device = "cpu",
@@ -24,10 +26,11 @@ test_that("memscore_predict parses JSON output", {
   )
 
   expect_s3_class(result, "data.frame")
-  expect_equal(result$id, "img1")
+  expect_equal(result$id, "red_square.png")
   expect_equal(result$memorability, 0.42)
   expect_equal(calls$command, normalizePath("/tmp/memscore", winslash = "/", mustWork = FALSE))
   expect_true("predict" %in% calls$args)
+  expect_true(normalizePath(image_path, winslash = "/", mustWork = TRUE) %in% calls$args)
   expect_true("--recursive" %in% calls$args)
   expect_true("--output" %in% calls$args)
 })

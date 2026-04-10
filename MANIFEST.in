@@ -1,0 +1,19 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include memscore *.py
+recursive-include membench *.py
+recursive-include resmem_legacy *.py
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune .cache
+prune .git
+prune .pytest_cache
+prune .venv
+prune .venv312
+prune build
+prune data
+prune dist
+prune docs
+prune lamem
+prune memscore.egg-info
+prune results
