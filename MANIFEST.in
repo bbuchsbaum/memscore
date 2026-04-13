@@ -2,6 +2,7 @@ include README.md
 include LICENSE
 include pyproject.toml
 recursive-include memscore *.py
+recursive-include memscore/artifacts *.pkl
 recursive-include membench *.py
 recursive-include resmem_legacy *.py
 global-exclude __pycache__ *.py[cod] .DS_Store

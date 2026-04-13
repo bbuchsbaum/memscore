@@ -1,4 +1,5 @@
 ^\.DS_Store$
+^\.cache($|/).*
 ^\.gitignore$
 (^|/)\.venv($|/).*
 (^|/)\.venv312($|/).*

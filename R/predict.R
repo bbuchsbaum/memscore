@@ -1,7 +1,8 @@
-#' Score image memorability
+#' Score image memorability with the ResMem reference baseline
 #'
-#' Scores one or more image files or directories using either the command-line
-#' backend or the optional `reticulate` bridge.
+#' Scores one or more image files or directories with ResMem using either the
+#' command-line backend or the optional `reticulate` bridge. Use
+#' [memscore_predict_standard()] for the flagship `memscore` scorer.
 #'
 #' @param paths Character vector of image files or directories.
 #' @param recursive Recurse into subdirectories when a path is a directory.

@@ -75,6 +75,21 @@ def test_cli_predict_writes_csv(monkeypatch, tmp_path: Path, capsys) -> None:
     assert "Wrote predictions to" in capsys.readouterr().out
 
 
+def test_cli_predict_resmem_alias(monkeypatch, tmp_path: Path, capsys) -> None:
+    image_path = tmp_path / "sample.jpg"
+    _write_image(image_path)
+
+    monkeypatch.setattr(
+        "memscore.cli.api.predict_paths",
+        lambda *args, **kwargs: [Prediction(identifier="sample.jpg", image_path=image_path, score=0.31)],
+    )
+
+    exit_code = main(["predict-resmem", str(image_path)])
+
+    assert exit_code == 0
+    assert '"memorability": 0.31' in capsys.readouterr().out
+
+
 def test_cli_benchmark_standard_uses_packaged_defaults(monkeypatch, tmp_path: Path, capsys) -> None:
     manifest = tmp_path / "manifest.csv"
     manifest.write_text("path,score,split\nimage.jpg,0.5,test\n", encoding="utf-8")
@@ -98,3 +113,66 @@ def test_cli_benchmark_standard_uses_packaged_defaults(monkeypatch, tmp_path: Pa
     assert captured_kwargs["tta_resize"] == 256
     assert output_path.exists()
     assert "Wrote standard benchmark summary" in capsys.readouterr().out
+
+
+def test_cli_predict_standard_writes_csv(monkeypatch, tmp_path: Path, capsys) -> None:
+    image_path = tmp_path / "standard.png"
+    _write_image(image_path)
+    model_path = tmp_path / "memscore-standard.pkl"
+    model_path.write_bytes(b"fixture")
+
+    monkeypatch.setattr(
+        "memscore.cli.api.predict_standard_paths",
+        lambda *args, **kwargs: [Prediction(identifier="standard.png", image_path=image_path, score=0.77)],
+    )
+
+    output_path = tmp_path / "standard_predictions.csv"
+    exit_code = main(
+        [
+            "predict-standard",
+            "--model",
+            str(model_path),
+            str(image_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    assert exit_code == 0
+    with output_path.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[0] == ["id", "image_path", "memorability"]
+    assert rows[1][0] == "standard.png"
+    assert rows[1][2] == "0.77000000"
+    assert "Wrote predictions to" in capsys.readouterr().out
+
+
+def test_cli_train_standard_scorer_uses_defaults(monkeypatch, tmp_path: Path, capsys) -> None:
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text("path,score,split\nimage.jpg,0.5,train\n", encoding="utf-8")
+    output_model = tmp_path / "memscore-standard.pkl"
+    captured_kwargs = {}
+
+    def fake_train_standard_scorer(**kwargs):
+        captured_kwargs.update(kwargs)
+        output_model.write_bytes(b"fixture")
+        return {"artifact_path": str(output_model), "clip_models": kwargs["clip_models"]}
+
+    monkeypatch.setattr("memscore.cli.api.train_standard_scorer", fake_train_standard_scorer)
+
+    exit_code = main(
+        [
+            "train-standard-scorer",
+            "--manifest",
+            str(manifest),
+            "--output-model",
+            str(output_model),
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured_kwargs["clip_models"] == ["ViT-B-32", "RN50", "ViT-B-16"]
+    assert captured_kwargs["tta_mode"] == "fivecrop"
+    assert captured_kwargs["tta_resize"] == 256
+    assert captured_kwargs["include_test"] is False
+    assert "Wrote standard scorer artifact" in capsys.readouterr().out

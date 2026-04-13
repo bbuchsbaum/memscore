@@ -14,6 +14,15 @@ Python package in-process through \code{reticulate}.
 
 Use \code{vignette("memscore", package = "memscore")} for a guided walkthrough.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://bbuchsbaum.github.io/memscore/}
+  \item \url{https://github.com/bbuchsbaum/memscore}
+  \item Report bugs at \url{https://github.com/bbuchsbaum/memscore/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Brad Buchsbaum \email{brad.buchsbaum@gmail.com}
 

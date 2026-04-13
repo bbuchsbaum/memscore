@@ -22,14 +22,64 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    predict = subparsers.add_parser("predict", help="Score one or more image files or directories with ResMem.")
-    predict.add_argument("paths", nargs="+", help="Image files or directories to score.")
-    predict.add_argument("--recursive", action="store_true", help="Recurse into subdirectories when paths are directories.")
-    predict.add_argument("--batch-size", type=int, default=32, help="Batch size for ResMem inference.")
-    predict.add_argument("--device", default="cpu", help="Torch device for inference.")
-    predict.add_argument("--cache-dir", default=".cache/memscore", help="Directory for downloaded checkpoints.")
-    predict.add_argument("--resmem-checkpoint", help="Optional explicit path to a ResMem checkpoint.")
-    predict.add_argument("--output", help="Optional CSV path for predictions.")
+    predict = subparsers.add_parser("predict", help="Score images with the ResMem reference baseline.")
+    _add_resmem_predict_args(predict)
+
+    predict_resmem = subparsers.add_parser(
+        "predict-resmem",
+        help="Alias for predict; score images with the ResMem reference baseline.",
+    )
+    _add_resmem_predict_args(predict_resmem)
+
+    predict_standard = subparsers.add_parser(
+        "predict-standard",
+        help="Score images with the flagship memscore CLIP-ridge ensemble.",
+    )
+    predict_standard.add_argument("paths", nargs="+", help="Image files or directories to score.")
+    predict_standard.add_argument(
+        "--model",
+        help="Path to a saved memscore standard scorer artifact. Defaults to a packaged artifact if installed.",
+    )
+    predict_standard.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Recurse into subdirectories when paths are directories.",
+    )
+    predict_standard.add_argument("--batch-size", type=int, default=32, help="Batch size for CLIP inference.")
+    predict_standard.add_argument("--device", default="cpu", help="Torch device for inference.")
+    predict_standard.add_argument("--cache-dir", default=".cache/memscore", help="Directory for cached embeddings.")
+    predict_standard.add_argument("--no-clip-scores", action="store_true", help="Do not clamp predicted scores to [0, 1].")
+    predict_standard.add_argument("--output", help="Optional CSV path for predictions.")
+
+    train_standard = subparsers.add_parser(
+        "train-standard-scorer",
+        help="Train and save the flagship memscore CLIP-ridge ensemble artifact.",
+    )
+    train_source = train_standard.add_mutually_exclusive_group(required=True)
+    train_source.add_argument("--manifest", help="Locked CSV manifest containing path, score, split, and optional id.")
+    train_source.add_argument(
+        "--dataset-config",
+        help="CSV with dataset, manifest, and optional root columns for pooled training across datasets.",
+    )
+    train_standard.add_argument("--root", help="Base directory for relative image paths when using --manifest.")
+    train_standard.add_argument("--output-model", required=True, help="Where to write the saved scorer artifact.")
+    train_standard.add_argument(
+        "--clip-models",
+        nargs="+",
+        default=list(STANDARD_CLIP_MODELS),
+        help="Frozen CLIP backbones to train. Defaults to the standard 3-CLIP recipe.",
+    )
+    train_standard.add_argument("--clip-pretrained", default=STANDARD_CLIP_PRETRAINED, help="open_clip pretrained tag.")
+    train_standard.add_argument("--clip-tta", default=STANDARD_CLIP_TTA_MODE, help="CLIP augmentation mode.")
+    train_standard.add_argument("--clip-tta-resize", type=int, default=STANDARD_CLIP_TTA_RESIZE, help="Resize target for CLIP TTA.")
+    train_standard.add_argument("--batch-size", type=int, default=32, help="Batch size for CLIP inference.")
+    train_standard.add_argument("--device", default="cpu", help="Torch device for inference.")
+    train_standard.add_argument("--cache-dir", default=".cache/memscore", help="Directory for cached embeddings.")
+    train_standard.add_argument(
+        "--include-test",
+        action="store_true",
+        help="Include manifest test splits in training. Leave off to preserve unbiased held-out tests.",
+    )
 
     manifest = subparsers.add_parser(
         "benchmark-manifest",
@@ -447,6 +497,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_resmem_predict_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("paths", nargs="+", help="Image files or directories to score.")
+    parser.add_argument("--recursive", action="store_true", help="Recurse into subdirectories when paths are directories.")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for ResMem inference.")
+    parser.add_argument("--device", default="cpu", help="Torch device for inference.")
+    parser.add_argument("--cache-dir", default=".cache/memscore", help="Directory for downloaded checkpoints.")
+    parser.add_argument("--resmem-checkpoint", help="Optional explicit path to a ResMem checkpoint.")
+    parser.add_argument("--output", help="Optional CSV path for predictions.")
+
+
 def _add_shared_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--clip-models",
@@ -505,6 +565,51 @@ def _run_predict(args: argparse.Namespace) -> int:
             indent=2,
         )
     )
+    return 0
+
+
+def _run_predict_standard(args: argparse.Namespace) -> int:
+    predictions = api.predict_standard_paths(
+        args.paths,
+        model_path=args.model,
+        recursive=args.recursive,
+        batch_size=args.batch_size,
+        device=args.device,
+        cache_dir=args.cache_dir,
+        clip_scores=not args.no_clip_scores,
+    )
+    if args.output:
+        output_path = api.write_prediction_csv(predictions, args.output)
+        print(f"Wrote predictions to {output_path}")
+    print(
+        json.dumps(
+            [
+                {"id": item.identifier, "image_path": str(item.image_path), "memorability": item.score}
+                for item in predictions
+            ],
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _run_train_standard_scorer(args: argparse.Namespace) -> int:
+    result = api.train_standard_scorer(
+        output_path=args.output_model,
+        manifest_path=args.manifest,
+        root=args.root,
+        dataset_config=args.dataset_config,
+        clip_models=args.clip_models,
+        clip_pretrained=args.clip_pretrained,
+        batch_size=args.batch_size,
+        device=args.device,
+        cache_dir=args.cache_dir,
+        tta_mode=args.clip_tta,
+        tta_resize=args.clip_tta_resize,
+        include_test=args.include_test,
+    )
+    print(json.dumps(result, indent=2))
+    print(f"Wrote standard scorer artifact to {Path(args.output_model).expanduser().resolve()}")
     return 0
 
 
@@ -826,8 +931,12 @@ def _run_multihead_head(args: argparse.Namespace) -> int:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "predict":
+    if args.command in {"predict", "predict-resmem"}:
         return _run_predict(args)
+    if args.command == "predict-standard":
+        return _run_predict_standard(args)
+    if args.command == "train-standard-scorer":
+        return _run_train_standard_scorer(args)
     if args.command == "benchmark-manifest":
         return _run_benchmark_manifest(args)
     if args.command == "benchmark-standard":

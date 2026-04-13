@@ -127,6 +127,73 @@
   utils::read.csv(output_path, stringsAsFactors = FALSE)
 }
 
+.predict_standard_via_reticulate <- function(
+  paths,
+  model = NULL,
+  recursive = FALSE,
+  batch_size = 32L,
+  device = "cpu",
+  cache_dir = NULL,
+  output = NULL,
+  clip_scores = TRUE,
+  python = NULL,
+  module = "memscore",
+  workdir = NULL
+) {
+  api <- .import_memscore_module(python = python, module = module, workdir = workdir)
+  output_path <- output %||% tempfile("memscore-standard-predict-", fileext = ".csv")
+  if (is.null(output)) {
+    on.exit(unlink(output_path), add = TRUE)
+  }
+
+  predictions <- api$predict_standard_paths(
+    as.list(vapply(paths, .normalize_optional_path, character(1))),
+    model_path = model %||% NULL,
+    recursive = recursive,
+    batch_size = as.integer(batch_size),
+    device = device,
+    cache_dir = cache_dir %||% NULL,
+    clip_scores = clip_scores
+  )
+  api$write_prediction_csv(predictions, .normalize_optional_path(output_path))
+  utils::read.csv(output_path, stringsAsFactors = FALSE)
+}
+
+.train_standard_scorer_via_reticulate <- function(
+  output_model,
+  manifest = NULL,
+  root = NULL,
+  dataset_config = NULL,
+  clip_models = c("ViT-B-32", "RN50", "ViT-B-16"),
+  clip_pretrained = "openai",
+  batch_size = 32L,
+  device = "cpu",
+  cache_dir = NULL,
+  clip_tta = "fivecrop",
+  clip_tta_resize = 256L,
+  include_test = FALSE,
+  python = NULL,
+  module = "memscore",
+  workdir = NULL
+) {
+  api <- .import_memscore_module(python = python, module = module, workdir = workdir)
+  result <- api$train_standard_scorer(
+    output_path = .normalize_optional_path(output_model),
+    manifest_path = manifest %||% NULL,
+    root = root %||% NULL,
+    dataset_config = dataset_config %||% NULL,
+    clip_models = as.list(clip_models),
+    clip_pretrained = clip_pretrained,
+    batch_size = as.integer(batch_size),
+    device = device,
+    cache_dir = cache_dir %||% ".cache/memscore",
+    tta_mode = clip_tta,
+    tta_resize = clip_tta_resize %||% NULL,
+    include_test = include_test
+  )
+  reticulate::py_to_r(result)
+}
+
 .benchmark_manifest_via_reticulate <- function(
   manifest,
   root = NULL,

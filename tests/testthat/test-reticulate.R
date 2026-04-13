@@ -27,6 +27,70 @@ test_that("memscore_predict can dispatch through the reticulate backend", {
   expect_equal(result$memorability, 0.42)
 })
 
+test_that("memscore_predict_standard can dispatch through the reticulate backend", {
+  testthat::local_mocked_bindings(
+    .resolve_memscore_backend = function(...) {
+      list(
+        kind = "reticulate",
+        source = "reticulate",
+        python = "/usr/bin/python3",
+        module = "memscore",
+        workdir = "/tmp"
+      )
+    },
+    .predict_standard_via_reticulate = function(...) {
+      data.frame(
+        id = "img1",
+        image_path = "/tmp/img1.jpg",
+        memorability = 0.77,
+        stringsAsFactors = FALSE
+      )
+    },
+    .package = "memscore"
+  )
+
+  result <- memscore_predict_standard(paths = "img1.jpg", model = "memscore-standard.pkl", backend = "reticulate")
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(result$id, "img1")
+  expect_equal(result$memorability, 0.77)
+})
+
+test_that("memscore_train_standard_scorer can dispatch through the reticulate backend", {
+  manifest <- tempfile(fileext = ".csv")
+  output_model <- tempfile(fileext = ".pkl")
+  writeLines("path,score,split\nimg1.jpg,0.5,train", manifest)
+
+  testthat::local_mocked_bindings(
+    .resolve_memscore_backend = function(...) {
+      list(
+        kind = "reticulate",
+        source = "reticulate",
+        python = "/usr/bin/python3",
+        module = "memscore",
+        workdir = "/tmp"
+      )
+    },
+    .train_standard_scorer_via_reticulate = function(...) {
+      list(
+        artifact_path = output_model,
+        model_type = "memscore-standard-ridge-mean",
+        clip_models = c("ViT-B-32", "RN50", "ViT-B-16")
+      )
+    },
+    .package = "memscore"
+  )
+
+  result <- memscore_train_standard_scorer(
+    manifest = manifest,
+    output_model = output_model,
+    backend = "reticulate"
+  )
+
+  expect_equal(result$model_type, "memscore-standard-ridge-mean")
+  expect_equal(result$clip_models, c("ViT-B-32", "RN50", "ViT-B-16"))
+})
+
 test_that("memscore_benchmark_manifest can dispatch through the reticulate backend", {
   manifest <- tempfile(fileext = ".csv")
   writeLines("path,score,split\nimg1.jpg,0.5,test", manifest)

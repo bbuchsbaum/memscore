@@ -17,6 +17,7 @@ from membench.memcat import run_memcat_study
 from membench.metrics import compute_metrics
 from membench.resmem_baseline import ResMemScorer, ensure_resmem_checkpoint
 from membench.lora_head import run_pooled_lora_head
+from membench.standard_scorer import predict_with_standard_scorer, train_standard_scorer as train_standard_scorer_artifact
 from membench.supervised_head import run_lodo_embedding_head, run_multihead_embedding_head, run_pooled_embedding_head
 from .defaults import (
     STANDARD_CLIP_MODELS,
@@ -27,6 +28,7 @@ from .defaults import (
 
 PathLike = Union[str, Path]
 IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+DEFAULT_STANDARD_SCORER_FILENAME = "memscore_standard.pkl"
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,106 @@ def predict_paths(
         Prediction(identifier=record.identifier, image_path=record.image_path, score=float(score))
         for record, score in zip(records, scores)
     ]
+
+
+def default_standard_scorer_path() -> Optional[Path]:
+    """Return the packaged standard scorer artifact path when one is installed."""
+
+    artifact = Path(__file__).resolve().parent / "artifacts" / DEFAULT_STANDARD_SCORER_FILENAME
+    return artifact if artifact.is_file() else None
+
+
+def resolve_standard_scorer_path(model_path: Optional[PathLike] = None) -> Path:
+    """Resolve an explicit or packaged standard scorer artifact."""
+
+    if model_path is not None:
+        path = Path(model_path).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Standard memscore model artifact does not exist: {path}")
+        return path
+
+    packaged = default_standard_scorer_path()
+    if packaged is None:
+        raise FileNotFoundError(
+            "No packaged standard memscore model artifact is installed. "
+            "Train one with `memscore train-standard-scorer --manifest ... --output-model ...` "
+            "and pass it to `memscore predict-standard --model ...`."
+        )
+    return packaged
+
+
+def predict_standard_paths(
+    paths: Sequence[PathLike],
+    *,
+    model_path: Optional[PathLike] = None,
+    recursive: bool = False,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: Optional[PathLike] = ".cache/memscore",
+    clip_scores: bool = True,
+) -> list[Prediction]:
+    """Score images with the standard memscore CLIP-ridge ensemble.
+
+    Unlike :func:`predict_paths`, this uses the memscore flagship scorer rather
+    than ResMem. A saved standard scorer artifact is required unless one is
+    packaged with the installation.
+    """
+
+    image_paths = collect_image_paths(paths, recursive=recursive)
+    records = [
+        Record(
+            image_path=image_path,
+            score=0.0,
+            identifier=image_path.name,
+        )
+        for image_path in image_paths
+    ]
+    resolved_model = resolve_standard_scorer_path(model_path)
+    scores = predict_with_standard_scorer(
+        model_path=resolved_model,
+        records=records,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        clip_scores=clip_scores,
+    )
+    return [
+        Prediction(identifier=record.identifier, image_path=record.image_path, score=float(score))
+        for record, score in zip(records, scores)
+    ]
+
+
+def train_standard_scorer(
+    *,
+    output_path: PathLike,
+    manifest_path: Optional[PathLike] = None,
+    root: Optional[PathLike] = None,
+    dataset_config: Optional[PathLike] = None,
+    clip_models: Sequence[str] = STANDARD_CLIP_MODELS,
+    clip_pretrained: str = STANDARD_CLIP_PRETRAINED,
+    batch_size: int = 32,
+    device: str = "cpu",
+    cache_dir: PathLike = ".cache/memscore",
+    tta_mode: str = STANDARD_CLIP_TTA_MODE,
+    tta_resize: Optional[int] = STANDARD_CLIP_TTA_RESIZE,
+    include_test: bool = False,
+) -> dict[str, object]:
+    """Train and save the standard memscore scorer artifact."""
+
+    return train_standard_scorer_artifact(
+        output_path=output_path,
+        manifest_path=manifest_path,
+        root=root,
+        dataset_config=dataset_config,
+        clip_models=list(clip_models),
+        clip_pretrained=clip_pretrained,
+        clip_tta_mode=tta_mode,
+        clip_tta_resize=tta_resize,
+        batch_size=batch_size,
+        device=device,
+        cache_dir=cache_dir,
+        include_test=include_test,
+    )
 
 
 def write_prediction_csv(predictions: Sequence[Prediction], output_path: PathLike) -> Path:

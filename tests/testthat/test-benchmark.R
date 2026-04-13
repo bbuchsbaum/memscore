@@ -91,6 +91,47 @@ test_that("memscore_benchmark_standard reads generated output file", {
   expect_true(file.exists(result$output_json))
 })
 
+test_that("memscore_train_standard_scorer parses generated artifact metadata", {
+  manifest <- system.file("extdata/tiny_manifest.csv", package = "memscore", mustWork = TRUE)
+  root <- dirname(manifest)
+  output_model <- tempfile(fileext = ".pkl")
+  calls <- list()
+
+  testthat::local_mocked_bindings(
+    .system2 = function(command, args, stdout = TRUE, stderr = TRUE) {
+      calls <<- list(command = command, args = args, stdout = stdout, stderr = stderr)
+      expect_equal(args[[1]], "train-standard-scorer")
+      expect_false("--include-test" %in% args)
+      expect_true(all(c("ViT-B-32", "RN50", "ViT-B-16") %in% args))
+      expect_equal(args[match("--manifest", args) + 1L], normalizePath(manifest, winslash = "/", mustWork = TRUE))
+      expect_equal(args[match("--root", args) + 1L], normalizePath(root, winslash = "/", mustWork = TRUE))
+      expect_equal(args[match("--output-model", args) + 1L], normalizePath(output_model, winslash = "/", mustWork = FALSE))
+      c(
+        "{",
+        sprintf('  "artifact_path": "%s",', normalizePath(output_model, winslash = "/", mustWork = FALSE)),
+        '  "model_type": "memscore-standard-ridge-mean",',
+        '  "clip_models": ["ViT-B-32", "RN50", "ViT-B-16"]',
+        "}",
+        sprintf("Wrote standard scorer artifact to %s", output_model)
+      )
+    },
+    .package = "memscore"
+  )
+
+  old <- options(memscore.cli = "/tmp/memscore")
+  on.exit(options(old), add = TRUE)
+
+  result <- memscore_train_standard_scorer(
+    manifest = manifest,
+    root = root,
+    output_model = output_model
+  )
+
+  expect_equal(result$model_type, "memscore-standard-ridge-mean")
+  expect_equal(result$clip_models, c("ViT-B-32", "RN50", "ViT-B-16"))
+  expect_equal(calls$command, normalizePath("/tmp/memscore", winslash = "/", mustWork = FALSE))
+})
+
 test_that("memscore_study_memcat reads generated study output", {
   memcat_root <- tempdir()
 
